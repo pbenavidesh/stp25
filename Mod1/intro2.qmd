@@ -1,0 +1,64 @@
+---
+title: "Introducción"
+author: "PBH"
+format: html
+---
+
+## pkgs
+- Para crear un nuevo chunk de código:
+CTRL/CMD + ALT + I
+
+- Para correr todo el chunk:
+CTRL/CMD + SHIFT + ENTER
+
+- Para correr solo la línea actual:
+CTRL/CMD + ENTER
+
+```{r}
+library(tidyverse)
+library(fpp3)
+```
+
+## Turismo
+
+```{r}
+mpg
+tourism
+```
+
+
+```{r}
+distinct(tourism, State)
+```
+
+```{r}
+distinct(filter(tourism, State == "Victoria"), Region)
+```
+
+```{r}
+summarise(group_by(as_tibble(filter(tourism, State == "Victoria", Region == "Lakes")),Purpose), media = mean(Trips))
+```
+
+```{r}
+tourism |> 
+  filter(State == "Victoria", Region == "Lakes") |> 
+  as_tibble() |> 
+  group_by(Purpose) |> 
+  summarise(media = mean(Trips))
+```
+
+```{r}
+tourism |> 
+  filter(State == "Victoria", Region == "Lakes") |>
+  autoplot(Trips) +
+  facet_wrap(vars(Purpose), scale = "free_y") +
+  theme(legend.position = "none")
+```
+
+
+```{r}
+tourism |> 
+  filter(State == "Victoria", Region == "Lakes") |> 
+  write_csv("victoria.csv")
+```
+
