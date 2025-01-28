@@ -1,0 +1,73 @@
+---
+title: "Intro"
+author: "pablo"
+format: html
+---
+
+## pkgs
+
+Para agregar un nuevo chunk, teclear:
+
+CTRL + ALT + I
+
+```{r}
+#| message: false
+
+library(tidyverse)
+library(fpp3)
+```
+
+## Datos de turismo
+
+```{r}
+tourism
+```
+
+```{r}
+distinct(tourism, State)
+```
+
+Vamos a analizar el estado de Tasmania
+
+```{r}
+distinct(filter(tourism, State == "Tasmania"),Region)
+```
+```{r}
+filter(filter(tourism, State == "Tasmania"), Region == "East Coast")
+```
+
+```{r}
+summarise(group_by(as_tibble(filter(tourism, State == "Tasmania", Region == "East Coast")), Purpose), media = mean(Trips))
+```
+
+Vamos a usar el *pipe* |> para mejorar el código anterior:
+
+```{r}
+tourism |> 
+  # filtrar por estado y región
+  filter(State == "Tasmania",
+         Region == "East Coast") |> 
+  # convertir a tibble
+  as_tibble() |> 
+  group_by(Purpose) |> 
+  summarise(media = mean(Trips))
+```
+
+```{r}
+tourism |> 
+  filter(State == "Tasmania",
+         Region == "East Coast") |> 
+  autoplot(Trips) +
+  facet_wrap(vars(Purpose), scale = "free_y") +
+  theme(legend.position = "none")
+```
+
+
+
+```{r}
+tourism |> 
+  filter(State == "Tasmania",
+         Region == "East Coast") |> 
+  write_csv("tasmania.csv")
+```
+
