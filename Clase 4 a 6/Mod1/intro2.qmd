@@ -1,5 +1,6 @@
 ---
 title: "Introducción"
+subtitle: "Clase 4 a 6"
 author: "PBH"
 format: html
 ---
@@ -59,6 +60,18 @@ tourism |>
 ```{r}
 tourism |> 
   filter(State == "Victoria", Region == "Lakes") |> 
-  write_csv("victoria.csv")
+  mutate(Quarter = as.Date(Quarter)) |> 
+  write_csv("./datos/victoria.csv")
 ```
+
+
+```{r}
+#| warning: false
+tourism |> 
+  filter(State == "Victoria", Region == "Lakes", Purpose == "Holiday") |>
+  model(classical_decomposition(Trips)) |> 
+  components() |> 
+  autoplot()
+```
+
 
