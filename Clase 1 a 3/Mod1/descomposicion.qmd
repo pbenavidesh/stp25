@@ -88,7 +88,30 @@ tasmania_comp |>
   ggplot(aes(x = Quarter, y = Trips)) +
   geom_line(color = "grey", size = 2) +
   geom_line(aes(y = season_adjust), color = "dodgerblue", size = 2)
+
 ```
+
+## Descomposición STL
+
+```{r}
+tasmania |> 
+  filter(Purpose == "Holiday") |> 
+  model(
+    STL(Trips ~ trend(window = 11) + season(window = "periodic"), robust = TRUE)
+  ) |> 
+  components() |> 
+  autoplot()
+```
+```{r}
+aus_production |> 
+  autoplot(log(Gas))
+
+aus_production |> 
+  model(STL(log(Gas) ~ season(window = "periodic"), robust = TRUE)) |> 
+  components() |> 
+  autoplot()
+```
+
 
 ```{r}
 aus_production |> 
