@@ -70,9 +70,39 @@ aus_production |>
 La función `model()` sirve para ajustar uno o más modelos a la(s) serie(s) de tiempo. Nos devuelve una tabla de modelos (`mable`).
 
 ```{r}
-tasmania |> 
+tasmania_comp <- tasmania |> 
   model(
     dcmp_clasica = classical_decomposition(Trips)
-  )
+  ) |> 
+  components()
+
+tasmania_comp
+
+tasmania_comp |> 
+  autoplot()
+```
+
+```{r}
+tasmania_comp |> 
+  filter(Purpose == "Holiday") |> 
+  ggplot(aes(x = Quarter, y = Trips)) +
+  geom_line(color = "grey", size = 2) +
+  geom_line(aes(y = season_adjust), color = "dodgerblue", size = 2)
+```
+
+```{r}
+aus_production |> 
+  model(STL(Gas, robust = TRUE)) |> 
+  components() |> 
+  ggplot(aes(x = Quarter, y = Gas)) +
+  geom_line(color = "grey", size = 1) +
+  geom_line(aes(y = trend), color = "firebrick", size = 1)
+
+aus_production |> 
+  model(STL(Gas, robust = TRUE)) |> 
+  components() |> 
+  ggplot(aes(x = Quarter, y = Gas)) +
+  geom_line(color = "grey", size = 1) +
+  geom_line(aes(y = season_adjust), color = "dodgerblue", size = 1)
 ```
 
