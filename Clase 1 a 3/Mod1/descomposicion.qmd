@@ -1,0 +1,78 @@
+---
+title: "Descomposición de series de tiempo"
+author: "PBH"
+format: html
+---
+
+```{r}
+#| message: false
+
+library(tidyverse)
+library(fpp3)
+```
+
+tsibble
+
+```{r}
+tasmania <- tourism |> 
+  filter(State == "Tasmania",
+         Region == "East Coast")
+
+tasmania
+```
+
+```{r}
+#| warning: false
+tasmania |> 
+  model(classical_decomposition(Trips, type = "additive")) |>
+  components() |> 
+  autoplot() +
+  theme(legend.position = "bottom")
+```
+
+```{r}
+#| warning: false
+
+tasmania |> 
+  model(classical_decomposition(Trips, type = "additive")) |>
+  components() |> 
+  filter(Purpose == "Holiday") |> 
+  autoplot()
+
+tasmania |> 
+  model(classical_decomposition(Trips, type = "additive")) |>
+  components() |> 
+  filter(Purpose == "Business") |> 
+  autoplot()
+
+tasmania |> 
+  model(classical_decomposition(Trips, type = "additive")) |>
+  components() |> 
+  filter(Purpose == "Visiting") |> 
+  autoplot()
+
+tasmania |> 
+  model(classical_decomposition(Trips, type = "additive")) |>
+  components() |> 
+  filter(Purpose == "Other") |> 
+  autoplot()
+```
+
+```{r}
+aus_production |> 
+  autoplot(Gas)
+aus_production |> 
+  model(classical_decomposition(Gas, type = "multiplicative")) |> 
+  components() |> 
+  autoplot()
+```
+
+La función `model()` sirve para ajustar uno o más modelos a la(s) serie(s) de tiempo. Nos devuelve una tabla de modelos (`mable`).
+
+```{r}
+tasmania |> 
+  model(
+    dcmp_clasica = classical_decomposition(Trips)
+  )
+```
+
