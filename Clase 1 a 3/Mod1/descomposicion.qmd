@@ -285,6 +285,12 @@ gas_fit2 <- aus_production |>
       # especificamos el modelo para la estacionalidad
       SNAIVE(season_year),
       RW(season_adjust ~ drift())
+    ),
+    stlf2 = decomposition_model(
+      # especificar la descomposición
+      STL(log(Gas) ~ season(window = "periodic"), robust = TRUE),
+      # Si no se especifica cómo modelar la estacionalidad, se toma SNAIVE por default
+      NAIVE(season_adjust)
     )
   )
 
@@ -294,6 +300,11 @@ gas_fit2
 ```{r}
 #| warning: false
 gas_fit2 |> 
+  select(stlf) |> 
+  gg_tsresiduals()
+
+gas_fit2 |> 
+  select(stlf2) |> 
   gg_tsresiduals()
 
 gas_fit2 |> 
@@ -304,6 +315,142 @@ gas_fit2 |>
 ```{r}
 gas_fit2 |> 
   forecast(h = "5 years") |> 
-  autoplot(aus_production)
+  autoplot(aus_production, level = NULL)  
+```
+
+## Train/test
+
+```{r}
+gas_train <- aus_production |> 
+  filter_index(. ~ "2005 Q2")
+```
+
+```{r}
+gas_fit2 <- gas_train |> 
+  model(
+    stlf = decomposition_model(
+      # especificar la descomposición
+      STL(log(Gas) ~ season(window = "periodic"), robust = TRUE),
+      # especificamos el modelo para la estacionalidad
+      SNAIVE(season_year),
+      RW(season_adjust ~ drift())
+    ),
+    stlf2 = decomposition_model(
+      # especificar la descomposición
+      STL(log(Gas) ~ season(window = "periodic"), robust = TRUE),
+      # Si no se especifica cómo modelar la estacionalidad, se toma SNAIVE por default
+      NAIVE(season_adjust)
+    )
+  )
+
+gas_fit2
+
+gas_fit2 |> 
+  augment() |> 
+  features(.innov, ljung_box, lag = 8)
+```
+
+```{r}
+gas_fcst <- gas_fit2 |> 
+  forecast(h = "5 years") 
+
+gas_fcst
+
+gas_fcst |> 
+  autoplot(aus_production, size = 1, level = NULL)
+
+gas_fcst |> 
+  autoplot(aus_production, size = 1) +
+  facet_wrap(vars(.model), scales = "free_y", ncol = 1) +
+  theme(legend.position = "none")
+```
+
+Métricas de error en el entrenamiento:
+
+```{r}
+accuracy(gas_fit2)
+```
+
+Error de pronóstico
+
+```{r}
+gas_fcst |> 
+  accuracy(aus_production)
+```
+
+## Combinación de modelos
+
+```{r}
+gas_fit3 <- gas_fit2 |> 
+  mutate(
+    stl_combinado = (stlf + stlf2)/2
+  )
+gas_fit3
+```
+
+```{r}
+gas_fit3 |> 
+  augment() |> 
+  features(.innov, ljung_box, lag = 8)
+
+gas_fcst3 <- gas_fit3 |> 
+  forecast(h = "5 years") 
+
+gas_fcst3 |> 
+  autoplot(aus_production, level = NULL)
+
+gas_fcst3 |> 
+  autoplot(aus_production) +
+  facet_wrap(vars(.model), scales = "free_y", ncol = 1) +
+  theme(legend.position = "none")
+
+gas_fcst3 |> 
+  accuracy(aus_production)
+```
+
+```{r}
+gas_fit4 <- gas_train |> 
+  model(
+    stl_combi1 = combination_model(
+      decomposition_model(
+       STL(log(Gas) ~ season(window = "periodic"), robust = TRUE),
+       RW(season_adjust ~ drift())
+    ),
+      decomposition_model(
+       STL(log(Gas) ~ season(window = "periodic"), robust = TRUE),
+       NAIVE(season_adjust)
+    )
+    ),
+    stl_combi_weights = combination_weighted(
+      decomposition_model(
+       STL(log(Gas) ~ season(window = "periodic"), robust = TRUE),
+       RW(season_adjust ~ drift())
+    ),
+      decomposition_model(
+       STL(log(Gas) ~ season(window = "periodic"), robust = TRUE),
+       NAIVE(season_adjust)
+    ), weights = c(0.9, 1.1)
+    ),
+    combinado_sin_stl = combination_model(
+      SNAIVE(log(Gas)),
+      RW(log(Gas) ~ drift())
+    )
+    
+  )
+gas_fit4
+
+accuracy(gas_fit4) |> 
+  arrange(MAPE)
+```
+```{r}
+gas_fcst4 <- gas_fit4 |> 
+  forecast(h = "5 years")
+
+gas_fcst4 |> 
+  autoplot(aus_production|> filter_index("1990 Q1" ~ .))
+
+gas_fcst4 |> 
+  accuracy(aus_production) |> 
+  arrange(MAPE)
 ```
 
