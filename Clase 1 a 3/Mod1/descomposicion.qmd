@@ -132,7 +132,8 @@ victoria |>
   filter(Purpose == "Other") |> 
   autoplot()
 ```
-## Gas
+# Gas
+
 
 ```{r}
 aus_production |> 
@@ -159,6 +160,8 @@ tasmania |>
   autoplot()
 ```
 
+## Transformaciones matemáticas y descomposición STL
+
 ```{r}
 aus_production |> 
   autoplot(Gas)
@@ -172,6 +175,7 @@ aus_production |>
   autoplot()
 ```
 
+## Tendencia y serie desestacionalizada
 
 ```{r}
 aus_production |> 
@@ -190,9 +194,7 @@ aus_production |>
 ```
 
 
-### Gráficas
-
-Gráfica de tiempo
+### Gráfica de tiempo
 
 ```{r}
 aus_production |> 
@@ -200,7 +202,7 @@ aus_production |>
   geom_point()
 ```
 
-Gráficas estacionales
+### Gráficas estacionales
 
 ```{r}
 aus_production |> 
@@ -212,19 +214,21 @@ aus_production |>
 aus_production |> 
   gg_season(Gas)
 ```
-Gráfica de subseries
+### Gráfica de subseries
 
 ```{r}
 aus_production |> 
   gg_subseries(Gas)
 ```
 
+### Inspección visual rápida
+
 ```{r}
 aus_production |> 
   gg_tsdisplay(Gas)
 ```
 
-### Benchmark models
+## Benchmark models
 
 ```{r}
 gas_fit <- aus_production |> 
@@ -255,6 +259,8 @@ gas_aug |>
   summarise(media = mean(.resid, na.rm = TRUE))
 ```
 
+## Diagnóstico de residuos
+
 ```{r}
 #| warning: false
 gas_fit |> 
@@ -262,12 +268,14 @@ gas_fit |>
   gg_tsresiduals()
 ```
 
+### Pruebas de autocorrelación - Ljung-Box
+
 ```{r}
 gas_aug |> 
   features(.innov, ljung_box, lag = 8)
 ```
 
-Pronósticos
+## Pronósticos
 
 ```{r}
 gas_fit |> 
@@ -275,6 +283,23 @@ gas_fit |>
   autoplot(aus_production) +
   facet_wrap(vars(.model), scales = "free_y")
 ```
+
+```{r}
+gas_fit <- aus_production |> 
+  model(
+    stlf = decomposition_model(
+      # especificar la descomposición
+      STL(log(Gas) ~ season(window = "periodic"), robust = TRUE),
+      # especificamos el modelo para la estacionalidad
+      SNAIVE(season_year),
+      RW(season_adjust ~ drift())
+    )
+  )
+gas_fit |> 
+  forecast(h = "5 years") |> 
+  autoplot(aus_production)
+```
+
 
 ```{r}
 gas_fit2 <- aus_production |> 
@@ -318,12 +343,16 @@ gas_fit2 |>
   autoplot(aus_production, level = NULL)  
 ```
 
+Para poder verificar la precisión del pronóstico, es necesario separar los datos en, al menos, un conjunto de entrenamiento y prueba (train/test).
+
 ## Train/test
 
 ```{r}
 gas_train <- aus_production |> 
   filter_index(. ~ "2005 Q2")
 ```
+
+## Ajuste de modelos de descomposición
 
 ```{r}
 gas_fit2 <- gas_train |> 
@@ -350,6 +379,8 @@ gas_fit2 |>
   features(.innov, ljung_box, lag = 8)
 ```
 
+### Pronósticos
+
 ```{r}
 gas_fcst <- gas_fit2 |> 
   forecast(h = "5 years") 
@@ -365,13 +396,13 @@ gas_fcst |>
   theme(legend.position = "none")
 ```
 
-Métricas de error en el entrenamiento:
+### Métricas de error en el entrenamiento
 
 ```{r}
 accuracy(gas_fit2)
 ```
 
-Error de pronóstico
+### Error de pronóstico
 
 ```{r}
 gas_fcst |> 
@@ -407,6 +438,7 @@ gas_fcst3 |>
 gas_fcst3 |> 
   accuracy(aus_production)
 ```
+## Más combinaciones
 
 ```{r}
 gas_fit4 <- gas_train |> 
@@ -438,6 +470,10 @@ gas_fit4 <- gas_train |>
     
   )
 gas_fit4
+
+gas_fit4 |>
+  augment() |> 
+  features(.innov, ljung_box, lag = 8)
 
 accuracy(gas_fit4) |> 
   arrange(MAPE)
