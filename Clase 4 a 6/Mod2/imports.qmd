@@ -59,10 +59,13 @@ imports_train |>
 ##
 
 ```{r}
+#| eval: false
+
+# not run
 tictoc::tic()
 tsbls_fit <- tsbls |> 
   model(
-    ETS(log(price) ~ season(c("N", "A"), opt_crit = "mae")
+    ETS(log(price) ~ season(c("N", "A")), opt_crit = "mae")
   )
 tictoc::toc()
 tsbls_fit
