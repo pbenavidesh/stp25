@@ -1,0 +1,93 @@
+---
+title: "Manufacturing"
+format: html
+editor: visual
+---
+
+```{r}
+#| message: false
+library(tidyverse)
+library(tsibble)
+library(feasts)
+library(fable)
+```
+
+```{r}
+manufactura <- tidyquant::tq_get(
+  "MEXPRMNTO01IXOBM",
+  get = "economic.data",
+  from = "1980-01-01"
+) |> 
+  mutate(
+    date = yearmonth(date)
+  ) |> 
+  as_tsibble(index = date)
+
+manufactura
+
+manufactura_train <- manufactura |> 
+  filter_index(. ~ "2023 mar.")
+
+manufactura_train
+```
+
+```{r}
+manufactura |> 
+  autoplot(price)
+```
+
+```{r}
+tsbls <- tidyquant::tq_get(
+  mex_ts_names,
+  get = "economic.data",
+  from = "1980-01-01"
+) |> 
+  mutate(
+    date = yearmonth(date)
+  ) |> 
+  as_tsibble(index = date, key = symbol)
+
+tsbls
+```
+
+```{r}
+tsbls |> 
+  autoplot(price) + 
+  facet_wrap(vars(symbol), scales = "free") + 
+  theme(legend.position = "none")
+```
+
+```{r}
+tictoc::tic()
+tsbls_fit <- tsbls |> 
+  model(
+    ets = ETS(log(price))
+  ) 
+tictoc::toc()
+tsbls_fit
+
+tsbls_fit |> 
+  augment() |> 
+  features(.innov, features = ljung_box, lag = 24)
+
+tsbls_fcst <- tsbls_fit |> 
+  forecast(h = "5 years") 
+
+tsbls_fcst |> 
+  autoplot(tsbls) +
+  facet_wrap(vars(symbol), scales = "free")
+```
+
+```{r}
+tsbls |> 
+  pivot_wider(
+    names_from = symbol,
+    values_from = price
+  ) |> 
+  pivot_longer(
+    cols = - date,
+    names_to = "variable",
+    values_to = "valor"
+  )
+```
+
