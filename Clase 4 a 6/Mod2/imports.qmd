@@ -1,0 +1,77 @@
+---
+title: "importaciones"
+format: html
+---
+
+```{r}
+#| message: false
+
+library(tidyverse)
+library(fpp3)
+```
+
+```{r}
+imports <- tidyquant::tq_get(
+  "IMPMX",
+  get = "economic.data",
+  from = "1980-01-01"
+) |> 
+  mutate(
+    date = yearmonth(date)
+  ) |> 
+  as_tsibble(
+    index = date
+  )
+
+imports
+
+imports_train <- imports |> 
+  filter_index(. ~ "2023 Dec.")
+
+imports_train |> 
+  autoplot(price)
+
+imports_train |> 
+  model(
+    STL(log(price) ~ season(window = "periodic"), robust = TRUE)
+  ) |> 
+  components() |> 
+  autoplot()
+```
+
+```{r}
+imports_train |> 
+  model(
+    stlf = decomposition_model(
+      STL(log(price) ~ season(window = "periodic"), robust = TRUE),
+      SNAIVE(season_year),
+      RW(season_adjust ~ drift())
+    ),
+    combinado = combination_model(
+      SNAIVE(log(price)),
+      RW(log(price) ~ drift())
+    )
+  ) |> 
+  forecast(h = 12) |> 
+  autoplot(imports |> filter_index("2010 Jan." ~ .), level = NULL)
+```
+
+##
+
+```{r}
+tictoc::tic()
+tsbls_fit <- tsbls |> 
+  model(
+    ETS(log(price) ~ season(c("N", "A"), opt_crit = "mae")
+  )
+tictoc::toc()
+tsbls_fit
+
+tsbls_fcst <- tsbls_fit |> 
+  forecast(h = "1 year") 
+
+tsbls_fcst |> 
+  autoplot(tsbls) + 
+  facet_wrap(vars(symbol), scales = "free")
+```
+
