@@ -1,0 +1,101 @@
+---
+title: "Descomposición de series de tiempo"
+author: "Pablo Benavides"
+format: html
+---
+
+## pkgs
+
+```{r}
+#| message: false
+library(tidyverse)
+library(fpp3)
+```
+
+
+```{r}
+#| include: false
+# stats::filter()
+# readxl::read_excel("archivo.xlsx")
+```
+
+```{r}
+#| echo: false
+aus_production |> 
+  autoplot(Electricity)
+```
+
+```{r}
+# aus_production |> 
+#   mutate(Quarter = as.Date(Quarter)) |> 
+#   select(Quarter, Electricity) |> 
+#   write_csv("elec.csv")
+```
+
+## Descomposición clásica
+
+Descomposición aditiva
+
+$$
+Y_t = T_t + S_t + R_t
+$$
+Descomposición multiplicativa
+
+$$
+Y_t = T_t \times S_t \times R_t \\
+log(Y_t) =  log(T_t \times S_t \times R_t) \\
+log(Y_t) = log(T_t) + log(S_t) + log(R_t)
+$$
+
+
+```{r}
+elec_fit <- aus_production |> 
+  model(
+    descomposicion_clasica = classical_decomposition(Electricity, type = "multiplicative")
+  )
+  
+elec_fit
+```
+
+```{r}
+elec_fit |> 
+  components() |> 
+  autoplot()
+```
+$$
+y_t = \exp^{x_t} \\
+\log(y_t) = x_t
+$$
+$$
+y = mx + b \\
+$$
+
+y ~ mx + b
+
+
+```{r}
+elec_dcmp <- aus_production |> 
+  model(
+    stl = STL(log(Electricity) ~ trend(window = 7), robust = TRUE)
+  ) |> 
+  components() 
+
+elec_dcmp
+  
+elec_dcmp |> 
+  autoplot()
+```
+
+```{r}
+elec_dcmp |> 
+  ggplot(aes(x = Quarter, y = `log(Electricity)`)) +
+  geom_line(color = "grey", size = 1) +
+  geom_line(aes(y = trend), color = "firebrick", size = 1)
+  
+elec_dcmp |> 
+  ggplot(aes(x = Quarter, y = `log(Electricity)`)) +
+  geom_line(color = "grey", size = 1) +
+  geom_line(aes(y = season_adjust), color = "dodgerblue", size = 1)
+```
+
+

@@ -170,6 +170,11 @@ aus_production |>
   autoplot(log(Gas))
 
 aus_production |> 
+  model(STL(Gas ~ season(window = 7), robust = TRUE)) |> 
+  components() |> 
+  autoplot()
+
+aus_production |> 
   model(STL(log(Gas) ~ season(window = "periodic"), robust = TRUE)) |> 
   components() |> 
   autoplot()
@@ -261,6 +266,25 @@ gas_aug |>
 
 ## Diagnóstico de residuos
 
+
+```{r}
+aus_production |> 
+  select(Quarter, Gas) |> 
+  mutate(lag1 = lag(Gas),
+         lag2 = lag(Gas,2),
+         lag3 = lag(Gas,3),
+         lag4 = lag(Gas,4)
+         )
+
+aus_production |> 
+  ACF(Gas)
+
+aus_production |> 
+  ACF(Gas) |> 
+  autoplot()
+```
+
+
 ```{r}
 #| warning: false
 gas_fit |> 
@@ -269,6 +293,12 @@ gas_fit |>
 ```
 
 ### Pruebas de autocorrelación - Ljung-Box
+
+$$
+H_0 : Q = 0 \text{ "No autocorrelacion"} \\
+H_1 : Q \neq 0 \text{ "Autocorrelacion"}
+$$
+
 
 ```{r}
 gas_aug |> 
@@ -279,7 +309,7 @@ gas_aug |>
 
 ```{r}
 gas_fit |> 
-  forecast(h = "2 years") |> 
+  forecast(h = "5 years") |> 
   autoplot(aus_production) +
   facet_wrap(vars(.model), scales = "free_y")
 ```
@@ -289,6 +319,13 @@ gas_fit <- aus_production |>
   model(
     stlf = decomposition_model(
       # especificar la descomposición
+      STL(Gas ~ season(window = 7), robust = TRUE),
+      # especificamos el modelo para la estacionalidad
+      SNAIVE(season_year),
+      RW(season_adjust ~ drift())
+    ),
+    stlf_log = decomposition_model(
+      # especificar la descomposición
       STL(log(Gas) ~ season(window = "periodic"), robust = TRUE),
       # especificamos el modelo para la estacionalidad
       SNAIVE(season_year),
@@ -297,8 +334,107 @@ gas_fit <- aus_production |>
   )
 gas_fit |> 
   forecast(h = "5 years") |> 
-  autoplot(aus_production)
+  autoplot(aus_production, level = NULL)
 ```
+
+## Train/test
+
+```{r}
+gas_train <- aus_production |> 
+  filter_index(. ~ "2005 Q2")
+```
+
+```{r}
+gas_fit <- gas_train |> 
+  model(
+    stlf = decomposition_model(
+      # especificar la descomposición
+      STL(Gas ~ season(window = 7), robust = TRUE),
+      # especificamos el modelo para la estacionalidad
+      SNAIVE(season_year),
+      RW(season_adjust ~ drift())
+    ),
+    stlf_log = decomposition_model(
+      # especificar la descomposición
+      STL(log(Gas) ~ season(window = "periodic"), robust = TRUE),
+      # especificamos el modelo para la estacionalidad
+      SNAIVE(season_year),
+      RW(season_adjust ~ drift())
+    )
+  )
+gas_fit |> 
+  forecast(h = "5 years") |> 
+  autoplot(aus_production, level = NULL)
+```
+
+```{r}
+gas_fcst <- gas_fit |> 
+  mutate(combinado = (stlf + stlf_log)/2) |> 
+  forecast(h = "5 years")
+
+gas_fcst |> 
+  autoplot(aus_production, level = NULL)
+```
+
+```{r}
+accuracy(gas_fit)
+
+gas_fcst |> 
+  accuracy(aus_production)
+```
+
+
+
+```{r}
+gas_fit <- gas_train |> 
+  model(
+    modelo_combinado = combination_model(
+      stlf = decomposition_model(
+      # especificar la descomposición
+      STL(Gas ~ season(window = 7), robust = TRUE),
+      # especificamos el modelo para la estacionalidad
+      SNAIVE(season_year),
+      RW(season_adjust ~ drift())
+    ),
+    stlf_log = decomposition_model(
+      # especificar la descomposición
+      STL(log(Gas) ~ season(window = "periodic"), robust = TRUE),
+      # especificamos el modelo para la estacionalidad
+      SNAIVE(season_year),
+      RW(season_adjust ~ drift())
+    )
+    ),
+    modelo_ponderado = combination_weighted(
+      stlf = decomposition_model(
+      # especificar la descomposición
+      STL(Gas ~ season(window = 7), robust = TRUE),
+      # especificamos el modelo para la estacionalidad
+      SNAIVE(season_year),
+      RW(season_adjust ~ drift())
+    ),
+    stlf_log = decomposition_model(
+      # especificar la descomposición
+      STL(log(Gas) ~ season(window = "periodic"), robust = TRUE),
+      # especificamos el modelo para la estacionalidad
+      SNAIVE(season_year),
+      RW(season_adjust ~ drift())
+    ), weights = c(0.7, 0.3)
+    )
+  )
+gas_fcst <- gas_fit |> 
+  forecast(h = "5 years") 
+
+gas_fcst |> 
+  autoplot(aus_production |> filter_index("1990 Q1" ~ .), level = NULL, size = 1)
+```
+
+```{r}
+gas_fcst |> 
+  accuracy(aus_production)
+```
+
+
+
 
 
 ```{r}
@@ -345,12 +481,7 @@ gas_fit2 |>
 
 Para poder verificar la precisión del pronóstico, es necesario separar los datos en, al menos, un conjunto de entrenamiento y prueba (train/test).
 
-## Train/test
 
-```{r}
-gas_train <- aus_production |> 
-  filter_index(. ~ "2005 Q2")
-```
 
 ## Ajuste de modelos de descomposición
 
