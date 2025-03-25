@@ -1,0 +1,131 @@
+---
+title: "Forecasting electricity demand"
+format: html
+---
+
+```{r}
+#| message: false
+
+library(tidyverse)
+library(fpp3)
+library(plotly)
+```
+
+```{r}
+vic_elec
+```
+
+```{r}
+elec <- vic_elec |> 
+  index_by(Hour = ~ lubridate::floor_date(., "1 hour")) |> 
+  summarise(
+    Demand = sum(Demand),
+    Temperature = mean(Temperature),
+    Holiday = any(Holiday)
+  ) |> 
+  mutate(
+    hora = hour(Hour)
+  )
+elec
+
+elec_train <- elec |> 
+  filter_index(. ~ "2014-10-31")
+
+elec_test <- elec |> 
+  filter_index("2014-11-01" ~ .)
+```
+
+```{r}
+p <- elec_train |> 
+  autoplot(Demand, color = "darkorange2")
+
+ggplotly(p, dynamicTicks = TRUE) |> 
+  rangeslider()
+```
+
+```{r}
+p <- elec_train |> 
+  autoplot(Temperature, color = "seagreen")
+
+ggplotly(p, dynamicTicks = TRUE) |> 
+  rangeslider()
+```
+
+```{r}
+elec_train |> 
+  ggplot(aes(x = Temperature, y = Demand, color = hora)) +
+  geom_point(alpha = 0.5) +
+  scale_color_viridis_c()
+
+elec_train |> 
+  ggplot(aes(x = Temperature, y = Demand, color = Holiday)) +
+  geom_point(alpha = 0.5) +
+  scale_color_brewer(palette = "Paired")
+```
+
+```{r}
+elec_train |> 
+  model(
+    STL(Demand ~ season(period = "year", window = "periodic") + 
+          season(period = "week", window = "periodic") +
+          season(period = "day", window = "periodic")
+          )
+  ) |> 
+  components() |> 
+  autoplot()
+```
+
+```{r}
+elec_fit <- elec_train |> 
+  model(
+    stl_reg = decomposition_model(
+      STL(Demand ~ season(period = "year", window = "periodic") + 
+          season(period = "week", window = "periodic") +
+          season(period = "day", window = "periodic")
+          ),
+      TSLM(season_adjust ~ Temperature + I(Temperature^2) + Holiday),
+      SNAIVE(season_year),
+      SNAIVE(season_week),
+      SNAIVE(season_day)
+    )
+  )
+
+elec_fit
+
+elec_aug <- elec_fit |> augment()
+
+p <- elec_aug |> 
+  ggplot(aes(x = Hour)) +
+  geom_line(aes(y = Demand)) +
+  geom_line(aes(y = .fitted), color = "firebrick")
+
+ggplotly(p, dynamicTicks = TRUE) |> 
+  rangeslider()
+```
+
+```{r}
+elec_fit |> 
+  gg_tsresiduals(lag_max = 168)
+
+
+elec_fit |> 
+  accuracy()
+```
+
+```{r}
+elec_fcst <- elec_fit |>
+  forecast(elec_test)
+
+p <- elec_fcst |> 
+  autoplot(elec |> filter_index("2014-10-01" ~ .), level = NULL) #+ 
+  # theme(legend.position = "top")
+
+ggplotly(p, dynamicTicks = TRUE) |> 
+  rangeslider()
+```
+
+```{r}
+elec_fcst |> 
+  accuracy(elec)
+```
+
