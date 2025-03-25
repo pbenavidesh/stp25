@@ -53,6 +53,13 @@ ggplotly(p, dynamicTicks = TRUE) |>
 
 ```{r}
 elec_train |> 
+  ggplot(aes(x = Temperature, y = Demand)) +
+  geom_point(alpha = 0.3)
+```
+
+
+```{r}
+elec_train |> 
   ggplot(aes(x = Temperature, y = Demand, color = hora)) +
   geom_point(alpha = 0.5) +
   scale_color_viridis_c()
@@ -84,13 +91,16 @@ elec_fit <- elec_train |>
           season(period = "day", window = "periodic")
           ),
       TSLM(season_adjust ~ Temperature + I(Temperature^2) + Holiday),
-      SNAIVE(season_year),
-      SNAIVE(season_week),
+      # SNAIVE(season_year),
+      # SNAIVE(season_week),
       SNAIVE(season_day)
     )
   )
 
 elec_fit
+
+elec_fit |> 
+  report()
 
 elec_aug <- elec_fit |> augment()
 
@@ -105,7 +115,7 @@ ggplotly(p, dynamicTicks = TRUE) |>
 
 ```{r}
 elec_fit |> 
-  gg_tsresiduals(lag_max = 168)
+  gg_tsresiduals(lag_max = 72)
 
 
 elec_fit |> 
