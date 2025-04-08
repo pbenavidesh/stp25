@@ -1,0 +1,65 @@
+---
+title: "Lagged predictors"
+format: html
+---
+
+```{r}
+#| message: false
+
+library(tidyverse)
+library(fpp3)
+```
+
+```{r}
+insurance
+```
+
+```{r}
+insurance |> 
+  pivot_longer(Quotes:TVadverts) |> 
+  autoplot()+
+  facet_wrap(vars(name), ncol = 1, scales = "free_y") +
+  theme(legend.position = "none")
+```
+```{r}
+insurance
+
+fit <- insurance |> 
+  mutate(Quotes = c(rep(NA,3), Quotes[4:40])) |> 
+  model(
+    lag0 = ARIMA(Quotes ~ pdq(d = 0) + TVadverts),
+    lag1 = ARIMA(Quotes ~ pdq(d = 0) + TVadverts + lag(TVadverts)),
+    lag2 = ARIMA(Quotes ~ pdq(d = 0) + TVadverts + lag(TVadverts) + lag(TVadverts,2)),
+    lag3 = ARIMA(Quotes ~ pdq(d = 0) + TVadverts + lag(TVadverts) + lag(TVadverts,2) + lag(TVadverts, 3))
+  )
+
+glance(fit) |> 
+  arrange(AICc)
+```
+
+```{r}
+fit_best <- insurance |> 
+  model(lag1 = ARIMA(Quotes ~ pdq(d = 0) + TVadverts + lag(TVadverts)))
+
+fit_best |> 
+  report()
+```
+```{r}
+fit_best |> 
+  augment() |> 
+  autoplot(Quotes, color = "dodgerblue", size = 1) +
+  geom_line(aes(y = .fitted), color = "firebrick", size = 1)
+```
+
+```{r}
+mex <- gapminder::gapminder |> 
+  filter(country == "Mexico") |> 
+  as_tsibble(index = year) 
+
+mex |> 
+  # autoplot(lifeExp) |> 
+  model(ETS(lifeExp ~ trend("A"))) |> 
+  forecast(h = "100 years") |> 
+  autoplot(mex)
+```
+
