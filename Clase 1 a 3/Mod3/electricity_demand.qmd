@@ -83,6 +83,7 @@ elec_train |>
 ```
 
 ```{r}
+tictoc::tic()
 elec_fit <- elec_train |> 
   model(
     stl_reg = decomposition_model(
@@ -94,24 +95,32 @@ elec_fit <- elec_train |>
       # SNAIVE(season_year),
       # SNAIVE(season_week),
       SNAIVE(season_day)
-    )
+    ),
+    sam = ARIMA(Demand ~ Temperature + I(Temperature^2) + Holiday + fourier(K = 6) + PDQ(0,0,0))
+  ) |> 
+  mutate(
+    sam = (stl_reg + sam)/2
   )
+tictoc::toc()
 
 elec_fit
 
-elec_fit |> 
-  report()
+# elec_fit |> 
+#   report()
 
 elec_aug <- elec_fit |> augment()
+```
 
+```{r}
 p <- elec_aug |> 
   ggplot(aes(x = Hour)) +
   geom_line(aes(y = Demand)) +
   geom_line(aes(y = .fitted), color = "firebrick")
 
-ggplotly(p, dynamicTicks = TRUE) |> 
-  rangeslider()
+# ggplotly(p, dynamicTicks = TRUE) |> 
+#   rangeslider()
 ```
+
 
 ```{r}
 elec_fit |> 
@@ -136,6 +145,7 @@ ggplotly(p, dynamicTicks = TRUE) |>
 
 ```{r}
 elec_fcst |> 
-  accuracy(elec)
+  accuracy(elec) |> 
+  arrange(MAPE)
 ```
 
