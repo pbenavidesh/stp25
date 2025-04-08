@@ -1,0 +1,88 @@
+---
+title: "Bootstrapping and bagging"
+format: html
+---
+
+```{r}
+#| message: false
+
+library(tidyverse)
+library(fpp3)
+```
+
+Pasos:
+
+1. Transformar la serie en caso de ser necesario
+1. Desscomponer la serie con STL
+1. Aplicar el "blocked bootstrap" sobre el componente residual
+
+
+```{r}
+cement <- aus_production |>
+  filter(year(Quarter) >= 1988) |>
+  select(Quarter, Cement)
+
+cement_stl <- cement |>
+  model(stl = STL(Cement))
+
+cement_stl |>
+  components() |>
+  autoplot()
+
+cement |> 
+  autoplot(Cement)
+```
+
+## Bootstrap
+
+```{r}
+cement_stl |>
+  generate(new_data = cement, times = 10,
+           bootstrap_block_size = 8) |>
+  autoplot(.sim) +
+  autolayer(cement, Cement) +
+  guides(colour = "none") +
+  labs(title = "Cement production: Bootstrapped series",
+       y="Tonnes ('000)")
+```
+
+## Bagging (Bootstrap aggregating)
+
+```{r}
+sim <- cement_stl |>
+  generate(new_data = cement, times = 100,
+           bootstrap_block_size = 8) |>
+  select(-.model, -Cement)
+
+sim
+```
+
+```{r}
+tictoc::tic()
+ets_forecasts <- sim |>
+  model(ets = ETS(.sim)) |>
+  forecast(h = 24)
+tictoc::toc()
+
+ets_forecasts |>
+  update_tsibble(key = .rep) |>
+  autoplot(.mean) +
+  autolayer(cement, Cement) +
+  guides(colour = "none") +
+  labs(title = "Cement production: bootstrapped forecasts",
+       y="Tonnes ('000)")
+```
+
+```{r}
+bagged <- ets_forecasts |>
+  summarise(bagged_mean = mean(.mean))
+
+cement |>
+  model(ets = ETS(Cement)) |>
+  forecast(h = 24) |>
+  autoplot(cement) +
+  autolayer(bagged, bagged_mean, col = "#D55E00") +
+  labs(title = "Cement production in Australia",
+       y="Tonnes ('000)")
+```
+
