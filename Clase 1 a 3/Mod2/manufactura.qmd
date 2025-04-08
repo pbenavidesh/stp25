@@ -105,6 +105,28 @@ tsbls |>
 
 ```{r}
 tictoc::tic()
+turismo_fit <- tourism |> 
+  model(
+    ets = ETS(Trips ~ trend(c("A","Ad")) + season(c("A", "M")))
+  )
+tictoc::toc()
+turismo_fit
+```
+
+
+```{r}
+tictoc::tic()
+turismo_fcst <- turismo_fit |> 
+  forecast(h = "3 years")
+tictoc::toc()
+
+turismo_fcst
+```
+
+
+
+```{r}
+tictoc::tic()
 tsbls_fit <- tsbls |> 
   model(
     ets = ETS(log(price))
