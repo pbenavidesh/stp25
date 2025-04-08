@@ -1,0 +1,160 @@
+---
+title: "Tarea ARIMA"
+format: html
+---
+
+```{r}
+library(tidyverse)
+library(fpp3)
+```
+
+```{r}
+gas_train <- aus_production |> 
+  filter_index(. ~ "2005 Q2")
+
+gas_train |> 
+  autoplot(Gas)
+```
+## Transformaciones
+
+```{r}
+lambda <- gas_train |> 
+  features(Gas, guerrero) |> 
+  pull(lambda_guerrero)
+
+lambda
+```
+```{r}
+gas_train |> 
+  autoplot(log(Gas))
+gas_train |> 
+  autoplot(box_cox(Gas, lambda = lambda))
+```
+
+## Descomposición
+
+```{r}
+gas_dcmp_lvls <- gas_train |> 
+  model(
+    stl = STL(Gas ~ season(window = 7), robust = TRUE)
+  ) |> 
+  components() 
+
+gas_dcmp_lvls |> 
+  autoplot()
+  # gg_tsdisplay(season_adjust |> difference(1), plot_type = "partial") + 
+  # ggtitle("Sin Logaritmos")
+
+gas_dcmp_log <- gas_train |> 
+  model(
+    stl_log = STL(log(Gas) ~ season(window = "periodic"), robust = TRUE)
+  ) |> 
+  components() 
+
+gas_dcmp_log |> 
+  autoplot()
+
+gas_dcmp_bc_per <- gas_train |> 
+  model(
+    stl_log = STL(box_cox(Gas, lambda = lambda) ~ season(window = "periodic"), robust = TRUE)
+  ) |> 
+  components() 
+
+gas_dcmp_bc_per|> 
+  autoplot()
+  # gg_tsdisplay(season_adjust |> difference(1), plot_type = "partial") + 
+  # ggtitle("Con Logaritmos")
+
+gas_dcmp_bc_no_per <- gas_train |> 
+  model(
+    stl_log = STL(box_cox(Gas, lambda = lambda), robust = TRUE)
+  ) |> 
+  components() 
+gas_dcmp_bc_no_per |> 
+  autoplot()
+```
+
+```{r}
+#| warning: false
+
+gas_dcmp_bc_no_per |> 
+  ggplot(aes(x = Quarter, y = season_adjust)) + 
+  geom_line()
+
+gas_dcmp_bc_no_per |> 
+  features(season_adjust, unitroot_ndiffs)
+
+gas_dcmp_lvls |> 
+  gg_tsdisplay(season_adjust |> difference(1), plot_type = "partial", lag_max = 20)
+```
+
+```{r}
+gas_fit <- gas_train |> 
+  model(
+    modelo_ponderado = combination_weighted(
+      stlf = decomposition_model(
+      # especificar la descomposición
+      STL(Gas ~ season(window = 7), robust = TRUE),
+      # especificamos el modelo para la estacionalidad
+      SNAIVE(season_year),
+      RW(season_adjust ~ drift())
+    ),
+    stlf_log = decomposition_model(
+      # especificar la descomposición
+      STL(log(Gas) ~ season(window = "periodic"), robust = TRUE),
+      # especificamos el modelo para la estacionalidad
+      SNAIVE(season_year),
+      RW(season_adjust ~ drift())
+    ), weights = c(0.7, 0.3)
+    ),
+    stlf_box_cox = decomposition_model(
+      STL(box_cox(Gas, lambda = lambda), robust = TRUE),
+      ETS(season_year ~ error(c("A","M")) + trend("N") + season(c("A", "M"))),
+      ARIMA(season_adjust ~ pdq(0:2, 0:1, 0:2) + PDQ(0,0,0))
+    ),
+    modelo_pond_ets_arima = combination_weighted(
+      stlf_box_cox = decomposition_model(
+      STL(box_cox(Gas, lambda = lambda), robust = TRUE),
+      ETS(season_year ~ error(c("A","M")) + trend("N") + season(c("A", "M"))),
+      ARIMA(season_adjust ~ pdq(0:2, 0:1, 0:2) + PDQ(0,0,0))
+    ),
+      stlf_lvls = decomposition_model(
+        STL(Gas ~ season(window = 7), robust = TRUE),
+        ETS(season_year ~ error("A") + trend("A") + season("A")),
+        ARIMA(season_adjust ~ pdq(1,1,1) + PDQ(0,0,0))
+      ),
+    weights = c(0.8, 0.2)
+    ),
+    pris_monica = combination_weighted(
+      decomposition_model(
+        STL(log(Gas) ~ season(window = "periodic"), robust = TRUE),  
+        RW(season_adjust ~ drift())
+  ),
+      decomposition_model(
+        STL(log(Gas) ~ season(window = "periodic"), robust = TRUE),
+        ETS(season_adjust ~ error("A") + trend("A") + season("A"))
+  ), weights = c(0.9,1.1) 
+  ),
+    
+  ) |> 
+  mutate(
+    combinado2 = (pris_monica + modelo_pond_ets_arima)/2,
+    combinado3 = (modelo_ponderado + pris_monica + modelo_pond_ets_arima)/3,
+    combinado_todo = (modelo_ponderado + pris_monica + modelo_pond_ets_arima + stlf_box_cox)/4
+  )
+
+gas_fit |> 
+  accuracy() |> 
+  arrange(MAPE)
+
+gas_fcst <- gas_fit |> 
+  forecast(h = "5 years")
+
+gas_fcst |> 
+  autoplot(aus_production |> filter_index("2000 Q1" ~ .), level = NULL, size = 1)
+
+gas_fcst |> 
+  accuracy(aus_production) |> 
+  arrange(MAPE)
+```
+
