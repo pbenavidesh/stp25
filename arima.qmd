@@ -1,0 +1,279 @@
+---
+title: "arima"
+format: html
+---
+
+
+```{r}
+#| message: false
+
+library(tidyverse)
+library(fpp3)
+```
+
+```{r}
+mex <- global_economy |> 
+  filter(Country == "Mexico")
+
+mex |> 
+  autoplot(Population)
+
+mex |> 
+  gg_tsdisplay(Population, plot_type = "partial", lag_max = 24)
+```
+
+```{r}
+mex |> 
+  features(Population, unitroot_ndiffs)
+
+mex |> 
+  features(Population |> difference(1), unitroot_kpss)
+```
+
+```{r}
+#| warning: false
+mex |> 
+  gg_tsdisplay(Population |> difference(1), plot_type = "partial", lag_max = 24)
+```
+
+```{r}
+nvda <- tidyquant::tq_get(
+  "NVDA",
+  from = "2024-01-01"
+) |> 
+  mutate(n = seq_along(date)) |> 
+  as_tsibble(index = n)
+
+nvda
+```
+
+```{r}
+#| warning: false
+nvda |> 
+  autoplot(close)
+
+nvda |> 
+  features(close, unitroot_ndiffs)
+
+nvda |> 
+  gg_tsdisplay(close |> difference(1), plot_type = "partial")
+
+nvda |> 
+  features(close |> difference(1), ljung_box, lag = 10)
+```
+
+
+
+
+```{r}
+elec_equip <- as_tsibble(fpp2::elecequip)
+
+elec_dcmp <- elec_equip %>%
+  model(STL(value ~ season(window="periodic"))) %>%
+  components() %>%
+  select(-.model) %>%
+  as_tsibble()
+elec_dcmp %>%
+  autoplot(season_adjust)
+```
+
+
+```{r}
+#| warning: false
+
+elec_dcmp %>%
+  gg_tsdisplay(difference(season_adjust), plot_type='partial')
+```
+ARIMA(p = 3, d = 1, q = 1)
+ARIMA(3,1,2)
+ARIMA(3,1,3)
+
+$$
+ARIMA(3,1,1): y_t' = c + \phi_1y_{t-1} + \phi_2y_{t-2} + \phi_3y_{t-3} + \theta_1\varepsilon_{t-1} +  + \varepsilon_t \\
+
+ARIMA(3,1,1): \hat{y}_t' = c + 0.0044y_{t-1}' + 0.0916y_{t-2}' + 0.3698y_{t-3}' - 0.3921\varepsilon_{t-1} + \varepsilon_t
+$$
+
+
+```{r}
+elec_fit <- elec_dcmp |> 
+  model(
+    arima_311 = ARIMA(season_adjust ~ pdq(3,1,2) + PDQ(0,0,0)),
+    arima_311_log = ARIMA(log(season_adjust) ~ pdq(3,1,2) + PDQ(0,0,0))
+  )
+
+elec_fit
+
+elec_fit |> 
+  report()
+
+elec_fit |> 
+  gg_tsresiduals()
+
+elec_fcst <- elec_fit |> 
+  forecast(h = "2 years")
+
+elec_fcst |> 
+  autoplot(elec_dcmp)
+```
+
+## Incorporar el filtro ARIMA al modelo previo
+
+```{r}
+#| warning: false
+
+gas_train <- aus_production |> 
+  filter_index(. ~ "2005 Q2")
+
+gas_train |> 
+  autoplot(Gas)
+
+gas_train |> 
+  model(
+    stl = STL(Gas ~ season(window = 7), robust = TRUE)
+  ) |> 
+  components() |> 
+  autoplot()
+  # gg_tsdisplay(season_adjust |> difference(1), plot_type = "partial") + 
+  # ggtitle("Sin Logaritmos")
+
+gas_train |> 
+  model(
+    stl_log = STL(box_cox(Gas, lambda = 0.1043) ~ season(window = "periodic"), robust = TRUE)
+  ) |> 
+  components() |> 
+  autoplot()
+  # gg_tsdisplay(season_adjust |> difference(1), plot_type = "partial") + 
+  # ggtitle("Con Logaritmos")
+
+gas_train |> 
+  model(
+    stl_log = STL(box_cox(Gas, lambda = 0.1043), robust = TRUE)
+  ) |> 
+  components() |> 
+  autoplot()
+
+gas_train |> 
+  model(
+    stl_log = STL(box_cox(Gas, lambda = 0.1043), robust = TRUE)
+  ) |> 
+  components() |> 
+  gg_tsdisplay(season_adjust |> difference(1), plot_type = "partial")
+```
+
+```{r}
+gas_train |> 
+  features(Gas |> box_cox(lambda = 0.1043), unitroot_nsdiffs)
+```
+
+```{r}
+gas_train |> 
+  autoplot(Gas |> box_cox(lambda = 0.1043) |> difference(4))
+
+gas_train |> 
+  features(Gas |> box_cox(lambda = 0.1043) |> difference(4), unitroot_ndiffs)
+```
+
+```{r}
+#| warning: false
+
+gas_train |> 
+  gg_tsdisplay(Gas |> box_cox(lambda = 0.1043) |> difference(4) |> difference(1), plot_type = "partial", lag_max = 20)
+```
+$$
+SARIMA(1,1,1)(2,1,1:2)_4
+$$
+
+```{r}
+gas_train |> 
+  features(Gas, guerrero)
+```
+
+
+```{r}
+gas_fit <- gas_train |> 
+  model(
+    modelo_ponderado = combination_weighted(
+      stlf = decomposition_model(
+      # especificar la descomposición
+      STL(Gas ~ season(window = 7), robust = TRUE),
+      # especificamos el modelo para la estacionalidad
+      SNAIVE(season_year),
+      RW(season_adjust ~ drift())
+    ),
+    stlf_log = decomposition_model(
+      # especificar la descomposición
+      STL(log(Gas) ~ season(window = "periodic"), robust = TRUE),
+      # especificamos el modelo para la estacionalidad
+      SNAIVE(season_year),
+      RW(season_adjust ~ drift())
+    ), weights = c(0.7, 0.3)
+    ),
+    mod_ponderado_arima = combination_weighted(
+      stlf = decomposition_model(
+      # especificar la descomposición
+      STL(Gas ~ season(window = 7), robust = TRUE),
+      # especificamos el modelo para la estacionalidad
+      SNAIVE(season_year),
+      ARIMA(season_adjust ~ pdq(0:2,1,0:2) + PDQ(0,0,0))
+    ),
+    stlf_log = decomposition_model(
+      # especificar la descomposición
+      STL(log(Gas) ~ season(window = "periodic"), robust = TRUE),
+      # especificamos el modelo para la estacionalidad
+      SNAIVE(season_year),
+      # RW(season_adjust ~ drift())
+      ARIMA(season_adjust ~ pdq(0:1,1,0:1) + PDQ(0,0,0))
+    ), weights = c(0.7,0.3)
+    ),
+    mod_ponderado_arima_box_cox = combination_weighted(
+      stlf = decomposition_model(
+      # especificar la descomposición
+      STL(Gas ~ season(window = 7), robust = TRUE),
+      # especificamos el modelo para la estacionalidad
+      SNAIVE(season_year),
+      ARIMA(season_adjust ~ pdq(0:2,1,0:2) + PDQ(0,0,0))
+    ),
+    stlf_log = decomposition_model(
+      # especificar la descomposición
+      STL(box_cox(Gas, lambda = 0.1043) ~ season(window = "periodic"), robust = TRUE),
+      # especificamos el modelo para la estacionalidad
+      SNAIVE(season_year),
+      # RW(season_adjust ~ drift())
+      ARIMA(season_adjust ~ pdq(0:1,1,0:1) + PDQ(0,0,0))
+    ), weights = c(0.7,0.3)
+    ),
+    mod_ponderado_ets = combination_weighted(
+      stlf = decomposition_model(
+      # especificar la descomposición
+      STL(Gas ~ season(window = 7), robust = TRUE),
+      # especificamos el modelo para la estacionalidad
+      SNAIVE(season_year),
+      ETS(season_adjust ~ error("A") + trend("A") + season("N"))
+    ),
+    stlf_log = decomposition_model(
+      # especificar la descomposición
+      STL(log(Gas) ~ season(window = "periodic"), robust = TRUE),
+      # especificamos el modelo para la estacionalidad
+      SNAIVE(season_year),
+      ETS(season_adjust ~ error("A") + trend("A") + season("N"))
+    ), weights = c(0.7,0.3)
+    ),
+    stlf_ets_arima = decomposition_model(
+      STL(box_cox(Gas, lambda = 0.1043), robust = TRUE),
+      ETS(season_year ~ error("A") + trend("N") + season("A")),
+      ARIMA(season_adjust)
+    ),
+    sarima = ARIMA(box_cox(Gas, lambda = 0.1043) ~ pdq(0:2,1,0:2) + PDQ(1:2,1,1:2))
+  )
+gas_fcst <- gas_fit |> 
+  forecast(h = "5 years") 
+
+gas_fcst |> 
+  autoplot(aus_production |> filter_index("1990 Q1" ~ .), level = NULL, size = 1)
+
+gas_fcst |> 
+  accuracy(aus_production) |> 
+  arrange(MAPE)
+```
+
