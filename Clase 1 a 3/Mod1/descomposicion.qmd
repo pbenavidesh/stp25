@@ -1,7 +1,9 @@
 ---
 title: "Descomposición de series de tiempo"
 author: "PBH"
-format: html
+format: 
+  html:
+    embed-resources: true
 ---
 
 ```{r}
