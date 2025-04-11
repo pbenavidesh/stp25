@@ -1,0 +1,244 @@
+---
+title: "Store Sales Forecasting"
+subtitle: "Kaggle Competition"
+format: 
+  html:
+    toc: true
+    embed-resources: true
+---
+
+
+# Initial setup
+
+## Packages
+
+```{r}
+#| label: pkgs
+#| message: false
+#| warning: false
+
+library(conflicted)
+## install kaggler package from github
+# pak::pak("mkearney/kaggler")
+library(kaggler)
+library(tidyverse)
+library(tsibble)
+library(feasts)
+library(fable)
+
+conflicts_prefer(
+  lubridate::date(),
+  dplyr::filter()
+)
+```
+## Kaggle
+
+```{r}
+comp_id <- "store-sales-time-series-forecasting"
+```
+
+## Data download
+
+::: {.callout-tip}
+
+Only needs to be run once.
+
+```{r}
+#| eval: false
+
+kgl_competitions_data_download_all(id = comp_id)
+```
+
+:::
+
+# Data import
+
+## `train.csv`
+
+### Convert to a `tsibble`
+
+```{r}
+#| label: train
+train_tsbl <- read_csv("train.csv", 
+                       show_col_types = FALSE) |> 
+  as_tsibble(index = date, key = c(store_nbr, family)) |> 
+  select(-onpromotion)
+
+train_tsbl
+```
+
+### Checking for gaps
+
+```{r}
+train_tsbl |> 
+  has_gaps()
+```
+All of them have implicit gaps in time. Below we'll find where are such gaps:
+
+```{r}
+gaps <- train_tsbl |> 
+  count_gaps(.full = TRUE) |> 
+  distinct(.from)
+
+gaps
+```
+
+It's Christmas. We'll fill the implicit gaps and set to zero its value.
+
+```{r}
+#| label: fill_gaps
+train_tsbl <- train_tsbl |> 
+  fill_gaps(.full = TRUE, 
+            sales = 0L)
+
+train_tsbl
+```
+## additional data
+
+### `holidays_events.csv`
+
+```{r}
+holidays <- read_csv("holidays_events.csv", show_col_types = FALSE)
+holidays
+```
+
+### `stores.csv`
+
+```{r}
+stores <- read_csv("stores.csv", show_col_types = FALSE)
+stores
+```
+
+### `oil.csv`
+
+```{r}
+oil <- read_csv("oil.csv", show_col_types = FALSE) |> 
+  as_tsibble(index = date) |> 
+  fill_gaps(.full = TRUE) |> 
+  fill(dcoilwtico, .direction = "downup")
+oil 
+```
+
+### Joining the data in one `tsibble`
+
+```{r}
+train_tsbl <- train_tsbl |> 
+  left_join(oil, by = "date")
+train_tsbl
+```
+
+### `test.csv`
+
+```{r}
+test <- read_csv("test.csv", show_col_types = FALSE) |> 
+  select(-onpromotion)
+test
+```
+
+
+# Exploratory analysis
+
+## Products with no sales
+
+We'll check if there are any family products not being sold in specific stores:
+
+```{r}
+ceros <- train_tsbl |> 
+  as_tibble() |> 
+  group_by(store_nbr, family) |> 
+  summarise(sales = sum(sales), .groups = "drop") |> 
+  filter(sales == 0) |> 
+  select(-sales)
+
+ceros
+```
+There are `{r} nrow(ceros)` series with no sales in the training set. We'll use a **NAIVE** model to forecast them.The time series that do have sales will be stored in `series_tsbl`:
+
+```{r}
+series_tsbl <- train_tsbl |> 
+  anti_join(ceros, by = c("store_nbr", "family"))
+
+series_tsbl
+```
+
+and the ones without sales in `series_ceros`:
+
+```{r}
+series_ceros <- train_tsbl |> 
+  anti_join(series_tsbl, by = c("date", "store_nbr", "family"))
+series_ceros
+```
+
+The forecasts for such series are done below:
+
+```{r}
+series_ceros_fit <- series_ceros |> 
+  model(naive = NAIVE(sales))
+series_ceros_fit
+
+series_ceros_fcst <- series_ceros_fit |> 
+  forecast(h = 16)
+
+series_ceros_fcst
+```
+
+# Benchmark model
+
+## Fit
+
+```{r}
+tictoc::tic()
+series_tsbl_fit <- series_tsbl |> 
+  model(
+    snaive = SNAIVE(sales)
+  )
+tictoc::toc()
+
+series_tsbl_fit
+```
+
+```{r}
+tictoc::tic()
+accuracy(series_tsbl_fit)
+tictoc::toc()
+```
+
+
+## Forecast
+
+```{r}
+tictoc::tic()
+series_tsbl_fcst <- series_tsbl_fit |> 
+  forecast(h = 16)
+tictoc::toc()
+
+series_tsbl_fcst
+```
+
+Joining forecasts
+
+```{r}
+full_fcst <- series_tsbl_fcst |> 
+  bind_rows(series_ceros_fcst)
+
+full_fcst
+```
+
+
+## Submission
+
+```{r}
+submission <- full_fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |>
+  select(id, .mean) |>
+  rename(sales = .mean)
+
+submission
+```
+
+
+```{r}
+submission |> 
+  write_csv("submission1_p25.csv")
+```
