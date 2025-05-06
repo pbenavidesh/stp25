@@ -35,7 +35,8 @@ imports
 imports_train <- imports |> 
   filter_index(. ~ "2024 Feb.")
 imports_train |> 
-  autoplot(imports)
+  autoplot(imports) +
+  ggtitle("Mexican Auto Imports")
 ```
 
 ## EDA
@@ -87,11 +88,15 @@ imports_train |>
 Primero quitamos la tendencia con una descomposición
 
 ```{r}
+# stl_sin_trend <- imports_train |> 
+#   model(
+#     stl = STL(box_cox(imports, lambda) ~ season(period = 1), robust = TRUE)
+#   )
+  
 stl_sin_trend <- imports_train |> 
   model(
-    stl = STL(box_cox(imports, lambda) ~ season(period = 1), robust = TRUE)
+    stl = STL(log(imports) ~ season(period = 1), robust = TRUE)
   )
-  
 
 stl_sin_trend |> 
   components() |> 
@@ -116,7 +121,7 @@ Los quitamos de nuestros datos:
 ```{r}
 imports_miss <- imports_train |> 
   anti_join(imports_outliers) |> 
-  fill_gaps()
+  fill_gaps(.full = TRUE)
 
 imports_miss
 ```
@@ -126,8 +131,12 @@ imports_miss
 Interpolamos los valores usando ARIMA.
 
 ```{r}
+# imports_fill <- imports_miss |> 
+#   model(arima = ARIMA(box_cox(imports, lambda))) |> 
+#   interpolate(imports_miss)
+
 imports_fill <- imports_miss |> 
-  model(arima = ARIMA(box_cox(imports, lambda))) |> 
+  model(arima = ARIMA(log(imports))) |> 
   interpolate(imports_miss)
 
 imports_miss |> 
@@ -140,7 +149,7 @@ imports_fill |>
   autoplot(imports)
 
 imports_fill |> 
-  autoplot(box_cox(imports, lambda))
+  autoplot(log(imports))
 
 imports_fill |> 
   model(
@@ -160,25 +169,54 @@ imports_fill |>
 ## Fit
 
 ```{r}
+#| warning: false
+
+# imports_fit <- imports_fill |> 
+#   model(
+#     benchmark = decomposition_model(
+#       STL(box_cox(imports, lambda), robust = TRUE),
+#       SNAIVE(season_year),
+#       RW(season_adjust ~ drift())
+#     ),
+#     stlf_bc_fourier_ets = decomposition_model(
+#       STL(box_cox(imports, lambda), robust = TRUE),
+#       TSLM(season_year ~ fourier(K = 3)),
+#       ETS(season_adjust)
+#     )
+#   )
+
 imports_fit <- imports_fill |> 
   model(
     benchmark = decomposition_model(
-      STL(box_cox(imports, lambda), robust = TRUE),
+      STL(log(imports), robust = TRUE),
       SNAIVE(season_year),
       RW(season_adjust ~ drift())
+    ),
+    el_que_no_falla = combination_model(
+      ETS(log(imports)),
+      ARIMA(log(imports)),
+      SNAIVE(log(imports))
     ),
     stlf_bc_fourier_ets = decomposition_model(
       STL(box_cox(imports, lambda), robust = TRUE),
       TSLM(season_year ~ fourier(K = 3)),
       ETS(season_adjust)
     )
+  ) |> 
+  mutate(
+    combinando_todo = (benchmark + el_que_no_falla + stlf_bc_fourier_ets)/3
   )
 
-imports_fit |> accuracy()
+imports_fit |> accuracy() |> 
+  arrange(MASE)
 
 imports_fit |> 
-  select(stlf_bc_fourier_ets) |> 
+  select(el_que_no_falla) |> 
   gg_tsresiduals()
+
+# imports_fit |> 
+#   select(stlf_bc_fourier_ets) |> 
+#   gg_tsresiduals()
 ```
 
 
@@ -191,6 +229,6 @@ imports_fcst |>
   arrange(MASE)
 
 imports_fcst |> 
-  autoplot(imports |> filter_index("2020 Feb." ~ .), alpha = 0.7, size = 1)
+  autoplot(imports |> filter_index("2022 Feb." ~ .), alpha = 0.7, size = 1)
 ```
 
