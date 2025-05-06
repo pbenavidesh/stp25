@@ -1,0 +1,196 @@
+---
+title: "Mexican Auto Imports"
+format: 
+  html:
+    embed-resources: true
+---
+
+```{r}
+#| message: false
+
+library(tidyverse)
+library(tsibble)
+library(feasts)
+library(fable)
+library(patchwork)
+```
+
+## Data
+
+```{r}
+imports <- tidyquant::tq_get(
+  "MAUINSA",
+  get = "economic.data",
+  from = "1993-01-01"
+) |> 
+  mutate(
+    date = yearmonth(date)
+  ) |> 
+  rename(imports = price) |> 
+  as_tsibble(index = date)
+imports
+```
+
+```{r}
+imports_train <- imports |> 
+  filter_index(. ~ "2024 Feb.")
+imports_train |> 
+  autoplot(imports)
+```
+
+## EDA
+
+## Estabilizar la varianza
+
+```{r}
+lambda <-  imports_train |> 
+  features(imports, features = guerrero) |> 
+  pull(lambda_guerrero)
+
+print(c("El lambda óptimo que indica la característica de guerrero es ", lambda))
+
+p1 <- imports_train |> 
+  autoplot(imports) +
+  ggtitle("Serie en niveles")
+
+p2 <- imports_train |> 
+  autoplot(box_cox(imports, lambda = lambda)) + 
+  ggtitle("Box-Cox")
+
+p3 <- imports_train |> 
+  autoplot(log(imports)) + 
+  ggtitle("Logaritmos")
+
+p1 / (p2 + p3)
+
+p1 / p2 / p3
+
+p1
+p2
+p3
+```
+### Autocorrelación
+
+```{r}
+#| warning: false
+
+imports_train |> 
+  features(box_cox(imports, lambda), unitroot_ndiffs)
+
+imports_train |> 
+  gg_tsdisplay(box_cox(imports, lambda) |> difference(1), plot_type = "partial")
+```
+
+
+### Outliers
+
+Primero quitamos la tendencia con una descomposición
+
+```{r}
+stl_sin_trend <- imports_train |> 
+  model(
+    stl = STL(box_cox(imports, lambda) ~ season(period = 1), robust = TRUE)
+  )
+  
+
+stl_sin_trend |> 
+  components() |> 
+  autoplot()
+```
+
+Revisar cuáles observaciones son outliers:
+
+```{r}
+imports_outliers <- stl_sin_trend |> 
+  components() |> 
+   filter(
+    remainder < quantile(remainder, 0.25) - 3 * IQR(remainder) |
+    remainder > quantile(remainder, 0.75) + 3 * IQR(remainder)
+  )
+
+imports_outliers
+```
+
+Los quitamos de nuestros datos:
+
+```{r}
+imports_miss <- imports_train |> 
+  anti_join(imports_outliers) |> 
+  fill_gaps()
+
+imports_miss
+```
+
+
+
+Interpolamos los valores usando ARIMA.
+
+```{r}
+imports_fill <- imports_miss |> 
+  model(arima = ARIMA(box_cox(imports, lambda))) |> 
+  interpolate(imports_miss)
+
+imports_miss |> 
+  model(arima = ARIMA(imports)) |> 
+  augment()
+
+imports_fill
+
+imports_fill |> 
+  autoplot(imports)
+
+imports_fill |> 
+  autoplot(box_cox(imports, lambda))
+
+imports_fill |> 
+  model(
+    STL(box_cox(imports, lambda), robust = TRUE)
+  ) |> 
+  components() |> 
+  autoplot()
+
+imports_fill |> 
+  model(
+    STL(box_cox(imports, lambda) ~ season(window = "periodic"), robust = TRUE)
+  ) |> 
+  components() |> 
+  autoplot()
+```
+
+## Fit
+
+```{r}
+imports_fit <- imports_fill |> 
+  model(
+    benchmark = decomposition_model(
+      STL(box_cox(imports, lambda), robust = TRUE),
+      SNAIVE(season_year),
+      RW(season_adjust ~ drift())
+    ),
+    stlf_bc_fourier_ets = decomposition_model(
+      STL(box_cox(imports, lambda), robust = TRUE),
+      TSLM(season_year ~ fourier(K = 3)),
+      ETS(season_adjust)
+    )
+  )
+
+imports_fit |> accuracy()
+
+imports_fit |> 
+  select(stlf_bc_fourier_ets) |> 
+  gg_tsresiduals()
+```
+
+
+```{r}
+imports_fcst <- imports_fit |> 
+  forecast(h = "1 year")
+
+imports_fcst |> 
+  accuracy(imports) |> 
+  arrange(MASE)
+
+imports_fcst |> 
+  autoplot(imports |> filter_index("2020 Feb." ~ .), alpha = 0.7, size = 1)
+```
+
